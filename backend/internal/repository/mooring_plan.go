@@ -16,6 +16,7 @@ type MooringPlanRepository interface {
 	Update(context.Context, uint, uint, *model.MooringPlan) error
 	Delete(context.Context, uint) error
 	CountByStatus(context.Context) (map[string]int64, error)
+	ListByScope(context.Context, string, string) ([]model.MooringPlan, error)
 }
 
 type mooringPlanRepository struct {
@@ -43,4 +44,7 @@ func (r *mooringPlanRepository) Delete(ctx context.Context, id uint) error {
 }
 func (r *mooringPlanRepository) CountByStatus(ctx context.Context) (map[string]int64, error) {
 	return r.store.CountByStatus(ctx)
+}
+func (r *mooringPlanRepository) ListByScope(ctx context.Context, facility, relatedCode string) ([]model.MooringPlan, error) {
+	return r.store.ListByScope(ctx, facility, relatedCode)
 }

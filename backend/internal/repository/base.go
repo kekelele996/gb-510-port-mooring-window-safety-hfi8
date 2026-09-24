@@ -99,6 +99,16 @@ func (s *Store[T]) CountByStatus(ctx context.Context) (map[string]int64, error) 
 	return counts, rows.Err()
 }
 
+// ListByScope returns records sharing the same facility and related code (the
+// 作业区 + 关联事项 impact scope), ordered newest first.
+func (s *Store[T]) ListByScope(ctx context.Context, facility, relatedCode string) ([]T, error) {
+	items := make([]T, 0)
+	err := s.db.WithContext(ctx).Model(new(T)).
+		Where("facility = ? AND UPPER(related_code) = ?", facility, strings.ToUpper(relatedCode)).
+		Order("updated_at DESC, id DESC").Find(&items).Error
+	return items, err
+}
+
 func normalizePage(page, pageSize int) (int, int) {
 	if page < 1 {
 		page = 1

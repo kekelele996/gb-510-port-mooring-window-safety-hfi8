@@ -25,6 +25,14 @@ const (
 
 var AllClearanceState = []string{"pending", "cleared", "restricted", "expired"}
 
+// Weather window statuses used by window-impact and clearance safety rules.
+const (
+	WeatherWindowForecast   = "forecast"
+	WeatherWindowSafe       = "safe"
+	WeatherWindowRestricted = "restricted"
+	WeatherWindowExpired    = "expired"
+)
+
 var VesselCallTransitions = map[string]map[string]bool{
 	"planned":  {"approach": true, "moored": true},
 	"approach": {"moored": true, "departed": true, "planned": true},

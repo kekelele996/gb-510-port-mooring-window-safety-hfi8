@@ -15,8 +15,9 @@ type CreateSafetyClearance struct {
 	MetricValue   float64   `json:"metricValue"`
 	MetricUnit    string    `json:"metricUnit" binding:"max=24"`
 	EffectiveAt   time.Time `json:"effectiveAt" binding:"required"`
-	Evidence      string    `json:"evidence" binding:"max=2000"`
+	Evidence      string    `json:"evidence" binding:"max:2000"`
 	RelatedCode   string    `json:"relatedCode" binding:"max=64"`
+	WindowCode    string    `json:"windowCode" binding:"max=64"`
 	WindowVersion uint      `json:"windowVersion" binding:"omitempty,min=1"`
 }
 
@@ -31,7 +32,8 @@ type UpdateSafetyClearance struct {
 	MetricValue     float64   `json:"metricValue"`
 	MetricUnit      string    `json:"metricUnit" binding:"max=24"`
 	EffectiveAt     time.Time `json:"effectiveAt" binding:"required"`
-	Evidence        string    `json:"evidence" binding:"max=2000"`
+	Evidence        string    `json:"evidence" binding:"max:2000"`
 	RelatedCode     string    `json:"relatedCode" binding:"max=64"`
+	WindowCode      string    `json:"windowCode" binding:"max=64"`
 	WindowVersion   uint      `json:"windowVersion" binding:"omitempty,min=1"`
 }

@@ -72,12 +72,15 @@ async function confirmTransition() {
         <el-table-column prop="owner" label="责任人"/>
         <el-table-column label="指标"><template #default="{ row }">{{ row.metricValue }} {{ row.metricUnit }}</template></el-table-column>
         <el-table-column label="更新时间" width="180"><template #default="{ row }">{{ formatDate(row.updatedAt) }}</template></el-table-column>
-        <el-table-column label="操作" width="200">
+        <el-table-column label="操作" width="240">
           <template #default="{ row }">
             <el-button v-if="!hideTransitions && canWrite && nextStatus(row.status, config.statuses)" link type="primary" @click="pending = { item: row, status: nextStatus(row.status, config.statuses)! }">推进至 {{ nextStatus(row.status, config.statuses) }}</el-button>
-            <span v-else-if="!canWrite" class="muted">只读权限</span>
-            <span v-else-if="hideTransitions" class="muted">由安全确认面板处理</span>
-            <span v-else class="muted">流程结束</span>
+            <slot name="row-actions" :row="row"/>
+            <span v-if="!$slots['row-actions']">
+              <span v-if="!hideTransitions && !canWrite" class="muted">只读权限</span>
+              <span v-else-if="hideTransitions" class="muted">由安全确认面板处理</span>
+              <span v-else-if="!hideTransitions && canWrite && !nextStatus(row.status, config.statuses)" class="muted">流程结束</span>
+            </span>
           </template>
         </el-table-column>
       </el-table>

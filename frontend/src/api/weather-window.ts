@@ -1,6 +1,6 @@
 
 import { request } from './client';
-import type { DomainRecord } from '../types/domain';
+import type { DomainRecord, WindowImpactAssessment } from '../types/domain';
 
 export async function listWeatherWindow(page = 1, pageSize = 20, search = '') {
   return request<DomainRecord[]>(`/weather-windows?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
@@ -12,4 +12,7 @@ export async function transitionWeatherWindow(id: number, status: string, expect
   return request<DomainRecord>(`/weather-windows/${id}/transition`, {
     method: 'POST', body: JSON.stringify({ status, expectedVersion, reason }),
   });
+}
+export async function getWindowImpact(id: number) {
+  return request<WindowImpactAssessment>(`/weather-windows/${id}/impact`);
 }

@@ -34,6 +34,9 @@ docker compose down -v --remove-orphans
 - JWT 登录和 viewer/operator/reviewer/admin 四级 RBAC；后端写路由中间件、前端路由守卫与按钮权限保持一致。
 - 所有状态变化使用乐观锁并写入不可覆盖的审计日志。
 - 安全许可采用真实双人确认：operator 首次提交后仍保持 `pending`，不同账号的 reviewer/admin 才能放行；提交人不能自审。
+- 窗口详情提供影响评估 `GET /api/weather-windows/:id/impact`：列出同作业区、同一关联事项（`facility` + `relatedCode`）下的系泊方案与安全许可，并给出现场继续/暂停结论。
+- 窗口转为 `restricted`/`expired` 时在同一事务内级联处置关联许可：已放行（`cleared`）许可同步过期；已提交待复核许可保留提交人、换绑新窗口版本并标记 `rebindRequired`，旧提交不能直接放行，须由原提交人基于安全的新版本重新确认后再独立复核。
+- 许可放行校验绑定窗口的安全状态与版本：窗口不安全返回 `ErrWindowUnsafe`，版本不一致返回 `ErrVersionChanged`，换绑待确认返回 `ErrRebindRequired`（均为 422 `business_rule`），前端明确提示重新确认。
 - `ClearancePanel` 在风浪窗口和许可页共用，固化窗口版本、首次提交人及复核人；许可审计显式保存窗口版本、操作者和请求 ID。
 - `RiskBadge` 在系泊方案和风浪窗口页共用，统一呈现风险等级与状态。
 - 请求 ID、结构化日志、全局错误映射和 Redis 分布式限流。
