@@ -35,6 +35,9 @@ docker compose down -v --remove-orphans
 - 所有状态变化使用乐观锁并写入不可覆盖的审计日志。
 - 安全许可采用真实双人确认：operator 首次提交后仍保持 `pending`，不同账号的 reviewer/admin 才能放行；提交人不能自审。
 - `ClearancePanel` 在风浪窗口和许可页共用，固化窗口版本、首次提交人及复核人；许可审计显式保存窗口版本、操作者和请求 ID。
+- 窗口详情提供「影响评估」(`GET /api/weather-windows/:id/impact`)：列出同作业区、同一关联事项下的系泊方案与安全许可，并按窗口状态给出现场「继续 / 暂停」结论与逐项处置建议。
+- 窗口转为 `restricted`/`expired` 时自动级联：已放行（`cleared`）许可同步过期；待复核（`pending`）许可保留提交人并换绑新窗口版本、乐观锁版本 +1，旧版本提交不能直接放行，须由独立复核人按当前安全窗口版本重新确认，全过程写 `window_cascade_expire`/`window_cascade_rebind` 审计。
+- 许可放行前强制校验关联窗口：窗口不存在（422 `ErrWindowMissing`）、非 `safe`（422 `ErrWindowUnsafe`）或窗口版本与提交不一致（422 `ErrWindowVersion`）均拒绝放行，并明确提示刷新后按新窗口版本重新确认。
 - `RiskBadge` 在系泊方案和风浪窗口页共用，统一呈现风险等级与状态。
 - 请求 ID、结构化日志、全局错误映射和 Redis 分布式限流。
 - 提供脱敏运行配置、当前会话、审计汇总和单实体审计历史接口。

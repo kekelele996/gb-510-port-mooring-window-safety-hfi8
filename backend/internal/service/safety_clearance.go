@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/blueship581/port-mooring-window-safety/backend/internal/dto"
 	"github.com/blueship581/port-mooring-window-safety/backend/internal/model"
 	"github.com/blueship581/port-mooring-window-safety/backend/internal/repository"
+	"gorm.io/gorm"
 )
 
 type SafetyClearanceService interface {
@@ -24,19 +26,96 @@ type SafetyClearanceService interface {
 
 type safetyClearanceService struct {
 	repository repository.SafetyClearanceRepository
+	windows    repository.WeatherWindowRepository
 	security   SecurityService
 }
 
-func NewSafetyClearanceService(repo repository.SafetyClearanceRepository, security SecurityService) SafetyClearanceService {
-	return &safetyClearanceService{repository: repo, security: security}
+func NewSafetyClearanceService(repo repository.SafetyClearanceRepository, windows repository.WeatherWindowRepository, security SecurityService) SafetyClearanceService {
+	return &safetyClearanceService{repository: repo, windows: windows, security: security}
 }
 
 func (s *safetyClearanceService) List(ctx context.Context, query dto.PageQuery) (repository.Page[model.SafetyClearance], error) {
-	return s.repository.List(ctx, query)
+	page, err := s.repository.List(ctx, query)
+	if err != nil {
+		return page, err
+	}
+	if err := s.attachLinkedWindows(ctx, page.Items); err != nil {
+		return page, err
+	}
+	return page, nil
 }
 
 func (s *safetyClearanceService) Get(ctx context.Context, id uint) (model.SafetyClearance, error) {
-	return s.repository.Get(ctx, id)
+	item, err := s.repository.Get(ctx, id)
+	if err != nil {
+		return item, err
+	}
+	projected := []model.SafetyClearance{item}
+	if err := s.attachLinkedWindows(ctx, projected); err != nil {
+		return item, err
+	}
+	return projected[0], nil
+}
+
+// attachLinkedWindows projects each clearance's linked window current state and
+// version onto the records. Resolution prefers related_code = window code and
+// falls back to the shared 关联事项 within the same 作业区.
+func (s *safetyClearanceService) attachLinkedWindows(ctx context.Context, items []model.SafetyClearance) error {
+	if len(items) == 0 {
+		return nil
+	}
+	facilities := make([]string, 0, len(items))
+	codes := make([]string, 0, len(items)*2)
+	seenFacility, seenCode := map[string]bool{}, map[string]bool{}
+	for _, item := range items {
+		if !seenFacility[item.Facility] {
+			seenFacility[item.Facility] = true
+			facilities = append(facilities, item.Facility)
+		}
+		for _, code := range []string{item.RelatedCode} {
+			upper := strings.ToUpper(strings.TrimSpace(code))
+			if upper != "" && !seenCode[upper] {
+				seenCode[upper] = true
+				codes = append(codes, upper)
+			}
+		}
+	}
+	windows, err := s.windows.FindForClearances(ctx, facilities, codes)
+	if err != nil {
+		return fmt.Errorf("resolve linked windows: %w", err)
+	}
+	for index := range items {
+		match := matchLinkedWindow(items[index], windows)
+		if match == nil {
+			continue
+		}
+		items[index].WindowLinked = true
+		items[index].WindowStatus = match.Status
+		items[index].WindowCurrentVersion = match.Version
+	}
+	return nil
+}
+
+func matchLinkedWindow(clearance model.SafetyClearance, windows []model.WeatherWindow) *model.WeatherWindow {
+	related := strings.ToUpper(strings.TrimSpace(clearance.RelatedCode))
+	if related == "" {
+		return nil
+	}
+	// Prefer an explicit window-code link in the same facility.
+	for index := range windows {
+		window := &windows[index]
+		if window.Facility == clearance.Facility && strings.ToUpper(window.Code) == related {
+			return window
+		}
+	}
+	// Fall back to the shared 关联事项 code.
+	for index := range windows {
+		window := &windows[index]
+		if window.Facility == clearance.Facility && strings.ToUpper(window.RelatedCode) == related {
+			return window
+		}
+	}
+	return nil
 }
 
 func (s *safetyClearanceService) Create(ctx context.Context, input dto.CreateSafetyClearance, actor, requestID string) (model.SafetyClearance, error) {
@@ -116,6 +195,17 @@ func (s *safetyClearanceService) Transition(ctx context.Context, id uint, input 
 	if role != model.RoleReviewer && role != model.RoleAdmin {
 		return model.SafetyClearance{}, ErrReviewerRequired
 	}
+	// Every release into `cleared` — including recovery from `restricted` —
+	// must pass the same window safety and current-version guard.
+	if target == string(constants.ClearanceStateCleared) {
+		if input.WindowVersion == 0 {
+			return model.SafetyClearance{}, ErrWindowVersion
+		}
+		if err := s.validateWindowForClearance(ctx, current, input.WindowVersion); err != nil {
+			return model.SafetyClearance{}, err
+		}
+		current.WindowVersion = input.WindowVersion
+	}
 	before := current.Status
 	current.Status = target
 	current.Version = input.ExpectedVersion + 1
@@ -133,6 +223,11 @@ func (s *safetyClearanceService) confirmClearance(ctx context.Context, current m
 	if input.WindowVersion == 0 {
 		return model.SafetyClearance{}, ErrWindowVersion
 	}
+	// Both the initial two-person submission and the final release must be made
+	// against an existing, currently safe window at the exact pinned version.
+	if err := s.validateWindowForClearance(ctx, current, input.WindowVersion); err != nil {
+		return model.SafetyClearance{}, err
+	}
 	now := time.Now().UTC()
 	if current.SubmittedBy == "" {
 		current.WindowVersion = input.WindowVersion
@@ -149,7 +244,11 @@ func (s *safetyClearanceService) confirmClearance(ctx context.Context, current m
 		return s.repository.Get(ctx, current.ID)
 	}
 	if current.WindowVersion != input.WindowVersion {
-		return model.SafetyClearance{}, ErrWindowVersion
+		// The window is safe and input.WindowVersion is its current version
+		// (validated above), so a mismatch means the submission was pinned to an
+		// older window version. The independent reviewer explicitly rebinds it;
+		// a request still carrying the old version is rejected upstream.
+		current.WindowVersion = input.WindowVersion
 	}
 	if current.SubmittedBy == actor {
 		return model.SafetyClearance{}, ErrSelfApproval
@@ -170,6 +269,26 @@ func (s *safetyClearanceService) confirmClearance(ctx context.Context, current m
 		return model.SafetyClearance{}, fmt.Errorf("persist safety confirmation audit: %w", err)
 	}
 	return s.repository.Get(ctx, current.ID)
+}
+
+func (s *safetyClearanceService) validateWindowForClearance(ctx context.Context, current model.SafetyClearance, requestedVersion uint) error {
+	window, err := s.windows.FindByCode(ctx, current.RelatedCode)
+	if err != nil {
+		window, err = s.windows.FindByFacilityAndRelatedCode(ctx, current.Facility, current.RelatedCode)
+	}
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrWindowMissing
+		}
+		return fmt.Errorf("resolve linked weather window: %w", err)
+	}
+	if window.Status != "safe" {
+		return ErrWindowUnsafe
+	}
+	if requestedVersion != window.Version {
+		return fmt.Errorf("%w：许可提交的窗口版本 v%d 与当前 v%d 不一致，请刷新并按新窗口版本重新确认", ErrWindowVersion, requestedVersion, window.Version)
+	}
+	return nil
 }
 
 func (s *safetyClearanceService) Delete(ctx context.Context, id uint, actor, requestID string) error {

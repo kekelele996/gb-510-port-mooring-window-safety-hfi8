@@ -21,6 +21,13 @@ type SafetyClearance struct {
 	SubmittedAt   *time.Time `json:"submittedAt"`
 	ConfirmedBy   string     `json:"confirmedBy" gorm:"size:80;index"`
 	ConfirmedAt   *time.Time `json:"confirmedAt"`
+
+	// Transient projection of the linked window's current state, populated by
+	// the service so the console can flag unsafe windows and version drift
+	// before a reviewer attempts a release. Not persisted.
+	WindowStatus         string `json:"windowStatus" gorm:"-"`
+	WindowCurrentVersion uint   `json:"windowCurrentVersion" gorm:"-"`
+	WindowLinked         bool   `json:"windowLinked" gorm:"-"`
 }
 
 func (item *SafetyClearance) GetBase() *BaseModel { return &item.BaseModel }

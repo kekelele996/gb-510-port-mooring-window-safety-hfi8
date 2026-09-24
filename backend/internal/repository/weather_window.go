@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 
 	"github.com/blueship581/port-mooring-window-safety/backend/internal/dto"
 	"github.com/blueship581/port-mooring-window-safety/backend/internal/model"
@@ -12,6 +13,9 @@ import (
 type WeatherWindowRepository interface {
 	List(context.Context, dto.PageQuery) (Page[model.WeatherWindow], error)
 	Get(context.Context, uint) (model.WeatherWindow, error)
+	FindByCode(context.Context, string) (model.WeatherWindow, error)
+	FindByFacilityAndRelatedCode(context.Context, string, string) (model.WeatherWindow, error)
+	FindForClearances(context.Context, []string, []string) ([]model.WeatherWindow, error)
 	Create(context.Context, *model.WeatherWindow) error
 	Update(context.Context, uint, uint, *model.WeatherWindow) error
 	Delete(context.Context, uint) error
@@ -31,6 +35,50 @@ func (r *weatherWindowRepository) List(ctx context.Context, q dto.PageQuery) (Pa
 }
 func (r *weatherWindowRepository) Get(ctx context.Context, id uint) (model.WeatherWindow, error) {
 	return r.store.Get(ctx, id)
+}
+
+func (r *weatherWindowRepository) FindByCode(ctx context.Context, code string) (model.WeatherWindow, error) {
+	var item model.WeatherWindow
+	err := r.store.db.WithContext(ctx).
+		Where("UPPER(code) = ?", strings.ToUpper(strings.TrimSpace(code))).
+		Order("updated_at DESC, id DESC").First(&item).Error
+	return item, err
+}
+
+// FindByFacilityAndRelatedCode resolves a window for clearances that reference
+// the shared 关联事项 code rather than the window code directly.
+func (r *weatherWindowRepository) FindByFacilityAndRelatedCode(ctx context.Context, facility, relatedCode string) (model.WeatherWindow, error) {
+	var item model.WeatherWindow
+	err := r.store.db.WithContext(ctx).
+		Where("facility = ? AND UPPER(related_code) = ?", facility, strings.ToUpper(strings.TrimSpace(relatedCode))).
+		Order("updated_at DESC, id DESC").First(&item).Error
+	return item, err
+}
+
+// FindForClearances returns all windows that could link to any of the given
+// clearances via matching window code or shared related code. The service
+// resolves the exact same-facility match in memory to avoid an N+1 query.
+func (r *weatherWindowRepository) FindForClearances(ctx context.Context, facilities, codes []string) ([]model.WeatherWindow, error) {
+	items := make([]model.WeatherWindow, 0)
+	if len(codes) == 0 {
+		return items, nil
+	}
+	upperCodes := make([]string, 0, len(codes))
+	for _, code := range codes {
+		if trimmed := strings.ToUpper(strings.TrimSpace(code)); trimmed != "" {
+			upperCodes = append(upperCodes, trimmed)
+		}
+	}
+	if len(upperCodes) == 0 {
+		return items, nil
+	}
+	query := r.store.db.WithContext(ctx).
+		Where("UPPER(code) IN ? OR UPPER(related_code) IN ?", upperCodes, upperCodes)
+	if len(facilities) > 0 {
+		query = query.Where("facility IN ?", facilities)
+	}
+	err := query.Order("updated_at DESC, id DESC").Find(&items).Error
+	return items, err
 }
 func (r *weatherWindowRepository) Create(ctx context.Context, item *model.WeatherWindow) error {
 	return r.store.Create(ctx, item)

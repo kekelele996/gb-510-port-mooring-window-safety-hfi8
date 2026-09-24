@@ -12,6 +12,7 @@ import (
 type MooringPlanRepository interface {
 	List(context.Context, dto.PageQuery) (Page[model.MooringPlan], error)
 	Get(context.Context, uint) (model.MooringPlan, error)
+	FindByScope(context.Context, string, string) ([]model.MooringPlan, error)
 	Create(context.Context, *model.MooringPlan) error
 	Update(context.Context, uint, uint, *model.MooringPlan) error
 	Delete(context.Context, uint) error
@@ -31,6 +32,15 @@ func (r *mooringPlanRepository) List(ctx context.Context, q dto.PageQuery) (Page
 }
 func (r *mooringPlanRepository) Get(ctx context.Context, id uint) (model.MooringPlan, error) {
 	return r.store.Get(ctx, id)
+}
+
+// FindByScope returns plans in the same 作业区 bound to the same 关联事项.
+func (r *mooringPlanRepository) FindByScope(ctx context.Context, facility, relatedCode string) ([]model.MooringPlan, error) {
+	items := make([]model.MooringPlan, 0)
+	err := r.store.db.WithContext(ctx).
+		Where("facility = ? AND UPPER(related_code) = ?", facility, relatedCode).
+		Order("updated_at DESC, id DESC").Find(&items).Error
+	return items, err
 }
 func (r *mooringPlanRepository) Create(ctx context.Context, item *model.MooringPlan) error {
 	return r.store.Create(ctx, item)

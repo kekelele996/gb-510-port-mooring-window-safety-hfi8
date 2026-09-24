@@ -20,6 +20,7 @@ func (h *WeatherWindowHandler) Register(group *gin.RouterGroup) {
 	resource := group.Group("/weather-windows")
 	resource.GET("", h.list)
 	resource.GET("/:id", h.get)
+	resource.GET("/:id/impact", h.impact)
 	resource.POST("", middleware.RequireMinimumRole("operator"), h.create)
 	resource.PUT("/:id", middleware.RequireMinimumRole("operator"), h.update)
 	resource.POST("/:id/transition", middleware.RequireMinimumRole("operator"), h.transition)
@@ -47,6 +48,19 @@ func (h *WeatherWindowHandler) get(c *gin.Context) {
 		return
 	}
 	util.OK(c, item)
+}
+
+func (h *WeatherWindowHandler) impact(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	assessment, err := h.service.Impact(c.Request.Context(), id)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	util.OK(c, assessment)
 }
 
 func (h *WeatherWindowHandler) create(c *gin.Context) {

@@ -7,11 +7,12 @@ import StatusBadge from './common/StatusBadge.vue';
 import MetricCard from './common/MetricCard.vue';
 import ConfirmDialog from './common/ConfirmDialog.vue';
 
-const props = defineProps<{ config: EntityConfig; store: any; hideTransitions?: boolean }>();
+const props = defineProps<{ config: EntityConfig; store: any; hideTransitions?: boolean; actionWidth?: number }>();
 const { session } = useAuth();
 const search = ref('');
 const showCreate = ref(false);
 const pending = ref<{ item: DomainRecord; status: string } | null>(null);
+const actionWidth = computed(() => props.actionWidth ?? 200);
 const roleRank: Record<string, number> = { viewer: 1, operator: 2, reviewer: 3, admin: 4 };
 const canWrite = computed(() => (roleRank[session.value?.role || ''] || 0) >= roleRank.operator);
 const highRisk = computed(() => props.store.items.filter((item: DomainRecord) => ['high', 'critical'].includes(item.riskLevel)).length);
@@ -72,8 +73,9 @@ async function confirmTransition() {
         <el-table-column prop="owner" label="责任人"/>
         <el-table-column label="指标"><template #default="{ row }">{{ row.metricValue }} {{ row.metricUnit }}</template></el-table-column>
         <el-table-column label="更新时间" width="180"><template #default="{ row }">{{ formatDate(row.updatedAt) }}</template></el-table-column>
-        <el-table-column label="操作" width="200">
+        <el-table-column label="操作" :width="actionWidth">
           <template #default="{ row }">
+            <slot name="rowActions" :row="row"/>
             <el-button v-if="!hideTransitions && canWrite && nextStatus(row.status, config.statuses)" link type="primary" @click="pending = { item: row, status: nextStatus(row.status, config.statuses)! }">推进至 {{ nextStatus(row.status, config.statuses) }}</el-button>
             <span v-else-if="!canWrite" class="muted">只读权限</span>
             <span v-else-if="hideTransitions" class="muted">由安全确认面板处理</span>
